@@ -17,6 +17,7 @@ import { extractToolMetadata } from './toolMetadata.js';
 import { extractTokenUsageFromStreamChunk, extractTokenUsageFromFinalState } from './tokenUtils.js';
 import { setGlobalToolEventCallback } from './tools/index.js';
 import { logger } from '../../utils/logger.js';
+import { getAnalytics } from '../../analytics/index.js';
 
 export class CodeMieAgent {
   private agent: any;
@@ -177,16 +178,16 @@ export class CodeMieAgent {
               }
             };
 
-            // Handle SSL verification consistently with SSO Gateway (rejectUnauthorized: false)
-            // SSO Gateway always allows self-signed certificates like codemie-model-fetcher does
+            // Handle SSL verification consistently with CodeMie Proxy (rejectUnauthorized: false)
+            // CodeMie Proxy always allows self-signed certificates like codemie-model-fetcher does
             process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
             // Suppress the NODE_TLS_REJECT_UNAUTHORIZED warning since this is expected behavior
-            // that matches how codemie-claude works through SSO Gateway
+            // that matches how codemie-claude works through CodeMie Proxy
             process.removeAllListeners('warning');
 
             if (this.config.debug) {
-              logger.debug('Disabled SSL verification (like SSO Gateway and codemie-model-fetcher)');
+              logger.debug('Disabled SSL verification (like CodeMie Proxy and codemie-model-fetcher)');
             }
 
             if (this.config.debug) {
@@ -373,6 +374,21 @@ export class CodeMieAgent {
           // Store token usage to associate with next tool call
           this.currentLLMTokenUsage = tokenUsage;
 
+          // Track API response in analytics
+          try {
+            const analytics = getAnalytics();
+            if (analytics.isEnabled) {
+              void analytics.trackAPIResponse({
+                latency: currentStep.endTime ? currentStep.endTime - currentStep.startTime : undefined
+              });
+            }
+          } catch (error) {
+            // Silently fail - analytics should not block agent execution
+            if (this.config.debug) {
+              logger.debug('Analytics API response tracking error:', error);
+            }
+          }
+
           if (this.config.debug) {
             logger.debug(`Token usage: ${tokenUsage.inputTokens} in, ${tokenUsage.outputTokens} out`);
           }
@@ -438,6 +454,22 @@ export class CodeMieAgent {
               if (step.type === 'llm_call' && !step.tokenUsage) {
                 step.tokenUsage = finalTokenUsage;
                 this.updateStatsWithTokenUsage(finalTokenUsage);
+
+                // Track in analytics (fallback case)
+                try {
+                  const analytics = getAnalytics();
+                  if (analytics.isEnabled) {
+                    void analytics.trackAPIResponse({
+                      latency: step.endTime ? step.endTime - step.startTime : undefined
+                    });
+                  }
+                } catch (error) {
+                  // Silently fail
+                  if (this.config.debug) {
+                    logger.debug('Analytics final state tracking error:', error);
+                  }
+                }
+
                 break;
               }
             }
@@ -551,6 +583,7 @@ export class CodeMieAgent {
               toolName: toolCall.name,
               toolArgs: toolCall.args
             });
+
 
             if (onToolEvent) {
               onToolEvent(toolCall.name);
