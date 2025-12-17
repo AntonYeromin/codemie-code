@@ -159,67 +159,7 @@ codemie doctor           # Health check and diagnostics
 
 For a full command reference, see the [Commands Documentation](docs/COMMANDS.md).
 
-## Configuration
 
-### Quick Setup
-
-The easiest way to get started:
-
-```bash
-# Interactive setup wizard
-codemie setup
-
-# Or use environment variables
-export CODEMIE_PROVIDER=openai
-export CODEMIE_API_KEY=sk-...
-export CODEMIE_MODEL=gpt-4
-```
-
-### Configuration Options
-
-- **Setup Wizard** - `codemie setup` (recommended)
-- **Environment Variables** - Override config for specific sessions
-- **Config File** - `~/.codemie/config.json` for persistent settings
-- **Multi-Provider Profiles** - Manage work, personal, and team configs
-
-See [Configuration Documentation](docs/CONFIGURATION.md) for detailed setup, environment variables reference, and advanced configuration.
-
-## Cross-Platform Support
-
-CodeMie CLI works seamlessly on **Windows, Linux, and macOS** with identical commands and behavior.
-
-### Supported Platforms
-
-| Platform | Status | Notes |
-|----------|--------|-------|
-| **Windows** | ✅ Full Support | Windows 10/11, PowerShell, CMD, Git Bash |
-| **Linux** | ✅ Full Support | All major distributions (Ubuntu, Debian, Fedora, Arch, etc.) |
-| **macOS** | ✅ Full Support | macOS 10.15+ (Intel and Apple Silicon) |
-
-### Platform Features
-
-All platforms support:
-- ✅ Automatic path resolution (handles `/` and `\` separators)
-- ✅ Environment variable configuration
-- ✅ Line ending detection (CRLF on Windows, LF on Unix)
-- ✅ All agent shortcuts (`codemie-code`, `codemie-claude`, etc.)
-- ✅ Interactive and non-interactive modes
-- ✅ Health checks and diagnostics
-
-### Installation & Verification
-
-```bash
-# Install on any platform
-npm install --global @codemieai/code
-
-# Verify installation works
-codemie doctor
-
-# Test agent health checks
-codemie-code health
-codemie-claude health
-codemie-codex health
-```
 
 ## Documentation
 
