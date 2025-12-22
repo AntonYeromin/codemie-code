@@ -11,14 +11,14 @@
  * For LiteLLM:
  * - LITELLM_BASE_URL: LiteLLM server URL (e.g., http://localhost:4000)
  * - LITELLM_API_KEY: LiteLLM API key
- * - LITELLM_MODEL: Model to test (e.g., gpt-4o)
+ * - LITELLM_MODEL: Model to test (default: gpt-4.1)
  *
  * For Bedrock:
- * - BEDROCK_BASE_URL: Bedrock runtime URL (e.g., https://bedrock-runtime.us-east-1.amazonaws.com)
- * - BEDROCK_API_KEY: AWS Access Key ID
- * - BEDROCK_SECRET_KEY: AWS Secret Access Key
- * - BEDROCK_REGION: AWS region (e.g., us-east-1)
- * - BEDROCK_MODEL: Model to test (e.g., claude-sonnet-4-5)
+ * - AWS_ACCESS_KEY_ID: AWS Access Key ID
+ * - AWS_SECRET_ACCESS_KEY: AWS Secret Access Key
+ * - AWS_DEFAULT_REGION: AWS region (e.g., us-east-1, us-west-2)
+ * - BEDROCK_MODEL: Model to test (default: global.anthropic.claude-sonnet-4-5-20250929-v1:0)
+ * Note: Base URL is automatically constructed from the region
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -38,6 +38,7 @@ interface ProviderTestData {
     apiKey?: string;
     model?: string;
     secretKey?: string;
+    accessKey?: string;
     region?: string;
   };
   buildProfile: (data: ProviderTestData) => CodeMieConfigOptions;
@@ -51,13 +52,13 @@ const providerTestCases: ProviderTestData[] = [
     envVars: {
       baseUrl: process.env.LITELLM_BASE_URL,
       apiKey: process.env.LITELLM_API_KEY,
-      model: process.env.LITELLM_MODEL
+      model: process.env.LITELLM_MODEL || 'gpt-4.1'
     },
     buildProfile: (data) => ({
       provider: 'litellm',
       baseUrl: data.envVars.baseUrl!,
       apiKey: data.envVars.apiKey!,
-      model: data.envVars.model,
+      model: data.envVars.model!,
       timeout: 300
     })
   },
@@ -65,16 +66,15 @@ const providerTestCases: ProviderTestData[] = [
     name: 'Bedrock',
     profileName: 'bedrock',
     envVars: {
-      baseUrl: process.env.BEDROCK_BASE_URL,
-      apiKey: process.env.BEDROCK_API_KEY,
-      secretKey: process.env.BEDROCK_SECRET_KEY,
-      region: process.env.BEDROCK_REGION,
-      model: process.env.BEDROCK_MODEL
+      accessKey: process.env.AWS_ACCESS_KEY_ID,
+      secretKey: process.env.AWS_SECRET_ACCESS_KEY,
+      region: process.env.AWS_DEFAULT_REGION,
+      model: process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
     },
     buildProfile: (data) => ({
       provider: 'bedrock',
-      baseUrl: data.envVars.baseUrl!,
-      apiKey: data.envVars.apiKey!,
+      baseUrl: `https://bedrock-runtime.${data.envVars.region}.amazonaws.com`,
+      apiKey: data.envVars.accessKey!,
       awsSecretAccessKey: data.envVars.secretKey!,
       awsRegion: data.envVars.region!,
       model: data.envVars.model,
@@ -107,17 +107,6 @@ describe('Setup profile - run codemie doctor - run codemie profile', () => {
   // Run parametrized tests for each provider
   providerTestCases.forEach((testCase) => {
     it(`should setup ${testCase.name} profile, run doctor with real connection, and check profile status`, async () => {
-      // Skip test if required credentials not provided
-      const requiredVars = ['baseUrl', 'apiKey'];
-      if (testCase.profileName === 'bedrock') {
-        requiredVars.push('secretKey', 'region');
-      }
-
-      const missingVars = requiredVars.filter(key => !testCase.envVars[key as keyof typeof testCase.envVars]);
-      if (missingVars.length > 0) {
-        console.log(`⏭️  Skipping ${testCase.name} e2e test: Missing environment variables: ${missingVars.join(', ')}`);
-        return;
-      }
 
       // Step 1: Create profile from environment variables
       const profileConfig = testCase.buildProfile(testCase);
@@ -137,7 +126,11 @@ describe('Setup profile - run codemie doctor - run codemie profile', () => {
       expect(writtenConfig.version).toBe(2);
       expect(writtenConfig.activeProfile).toBe(testCase.profileName);
       expect(writtenConfig.profiles[testCase.profileName].provider).toBe(testCase.profileName);
-      expect(writtenConfig.profiles[testCase.profileName].baseUrl).toBe(testCase.envVars.baseUrl);
+
+      // Verify baseUrl (construct expected URL for Bedrock)
+      const expectedBaseUrl = testCase.envVars.baseUrl ||
+        (testCase.profileName === 'bedrock' ? `https://bedrock-runtime.${testCase.envVars.region}.amazonaws.com` : undefined);
+      expect(writtenConfig.profiles[testCase.profileName].baseUrl).toBe(expectedBaseUrl);
 
       // Step 2: Run 'codemie doctor'
       const doctorResult: CommandResult = cli.runSilent('doctor');
@@ -165,11 +158,27 @@ describe('Setup profile - run codemie doctor - run codemie profile', () => {
       expect(doctorResult.output).toMatch(/Active Profile:/i);
       expect(doctorResult.output).toContain(`○ Active Profile: ${testCase.profileName}`);
       expect(doctorResult.output).toContain(`✓ Provider: ${testCase.profileName}`);
-      expect(doctorResult.output).toContain(`✓ Base URL: ${testCase.envVars.baseUrl}`);
+      expect(doctorResult.output).toContain(`✓ Base URL: ${expectedBaseUrl}`);
 
       // Verify model if provided
       if (testCase.envVars.model) {
         expect(doctorResult.output).toContain(`✓ Model: ${testCase.envVars.model}`);
+      }
+
+      // Provider-specific health checks
+      if (testCase.profileName === 'bedrock') {
+        // Verify AWS Bedrock Provider section
+        expect(doctorResult.output).toMatch(/AWS Bedrock Provider:/i);
+        expect(doctorResult.output).toMatch(/✓.*AWS Bedrock is accessible with \d+ model\(s\) available/i);
+        expect(doctorResult.output).toMatch(/○.*Version:.*Region:/i);
+
+        // Verify model availability check if model is specified
+        if (testCase.envVars.model) {
+          expect(doctorResult.output).toMatch(new RegExp(`✓.*Model '.*${testCase.envVars.model}.*' available`, 'i'));
+        }
+      } else if (testCase.profileName === 'litellm') {
+        // LiteLLM-specific checks (if any)
+        // Can add LiteLLM provider section checks here
       }
 
       // Verify Installed Agents section
