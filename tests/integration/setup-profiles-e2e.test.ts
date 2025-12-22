@@ -13,12 +13,20 @@
  * - LITELLM_API_KEY: LiteLLM API key
  * - LITELLM_MODEL: Model to test (default: gpt-4.1)
  *
- * For Bedrock:
+ * For Bedrock (Direct Auth):
  * - AWS_ACCESS_KEY_ID: AWS Access Key ID
  * - AWS_SECRET_ACCESS_KEY: AWS Secret Access Key
  * - AWS_DEFAULT_REGION: AWS region (e.g., us-east-1, us-west-2)
  * - BEDROCK_MODEL: Model to test (default: global.anthropic.claude-sonnet-4-5-20250929-v1:0)
  * Note: Base URL is automatically constructed from the region
+ *
+ * For Bedrock (AWS Profile Auth):
+ * - AWS_ACCESS_KEY_ID: AWS Access Key ID (used to create AWS profile)
+ * - AWS_SECRET_ACCESS_KEY: AWS Secret Access Key (used to create AWS profile)
+ * - AWS_DEFAULT_REGION: AWS region (e.g., us-east-1, us-west-2)
+ * - AWS_PROFILE: AWS profile name (default: test-codemie-profile)
+ * - BEDROCK_MODEL: Model to test (default: global.anthropic.claude-sonnet-4-5-20250929-v1:0)
+ * Note: Creates ~/.aws/credentials with the specified profile
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -33,6 +41,7 @@ import type { MultiProviderConfig, CodeMieConfigOptions } from '../../src/env/ty
 interface ProviderTestData {
   name: string;
   profileName: string;
+  expectedProvider?: string; // Expected provider type (defaults to profileName if not specified)
   envVars: {
     baseUrl?: string;
     apiKey?: string;
@@ -40,8 +49,10 @@ interface ProviderTestData {
     secretKey?: string;
     accessKey?: string;
     region?: string;
+    awsProfile?: string;
   };
   buildProfile: (data: ProviderTestData) => CodeMieConfigOptions;
+  setupAwsProfile?: (data: ProviderTestData) => Promise<void>;
 }
 
 // Define test cases for each provider
@@ -82,6 +93,55 @@ const providerTestCases: ProviderTestData[] = [
       debug: false,
       name: data.profileName
     })
+  },
+  {
+    name: 'Bedrock (AWS Profile)',
+    profileName: 'bedrock-profile',
+    expectedProvider: 'bedrock', // Provider type is 'bedrock', not 'bedrock-profile'
+    envVars: {
+      accessKey: process.env.AWS_ACCESS_KEY_ID,
+      secretKey: process.env.AWS_SECRET_ACCESS_KEY,
+      region: process.env.AWS_DEFAULT_REGION,
+      model: process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      awsProfile: process.env.AWS_PROFILE || 'test-codemie-profile'
+    },
+    buildProfile: (data) => ({
+      provider: 'bedrock',
+      baseUrl: `https://bedrock-runtime.${data.envVars.region}.amazonaws.com`,
+      apiKey: 'aws-profile',
+      awsProfile: data.envVars.awsProfile!,
+      awsRegion: data.envVars.region!,
+      model: data.envVars.model,
+      timeout: 300,
+      debug: false,
+      name: data.profileName
+    }),
+    setupAwsProfile: async (data) => {
+      // Create AWS credentials file
+      const awsDir = join(homedir(), '.aws');
+      const credentialsFile = join(awsDir, 'credentials');
+
+      await mkdir(awsDir, { recursive: true });
+
+      // Read existing credentials or start fresh
+      let credentialsContent = '';
+      if (existsSync(credentialsFile)) {
+        credentialsContent = await readFile(credentialsFile, 'utf-8');
+      }
+
+      // Check if profile already exists
+      const profileRegex = new RegExp(`\\[${data.envVars.awsProfile}\\]`, 'i');
+      if (profileRegex.test(credentialsContent)) {
+        // Profile exists, use it without changes
+        return;
+      }
+
+      // Profile missing, create it
+      const profileSection = `\n[${data.envVars.awsProfile}]\naws_access_key_id = ${data.envVars.accessKey}\naws_secret_access_key = ${data.envVars.secretKey}\n`;
+      credentialsContent += profileSection;
+
+      await writeFile(credentialsFile, credentialsContent);
+    }
   }
 ];
 
@@ -108,6 +168,11 @@ describe('Setup profile - run codemie doctor - run codemie profile', () => {
   providerTestCases.forEach((testCase) => {
     it(`should setup ${testCase.name} profile, run doctor with real connection, and check profile status`, async () => {
 
+      // Step 0: Setup AWS profile if needed (for profile-based auth)
+      if (testCase.setupAwsProfile) {
+        await testCase.setupAwsProfile(testCase);
+      }
+
       // Step 1: Create profile from environment variables
       const profileConfig = testCase.buildProfile(testCase);
       const config: MultiProviderConfig = {
@@ -125,11 +190,14 @@ describe('Setup profile - run codemie doctor - run codemie profile', () => {
       const writtenConfig = JSON.parse(await readFile(testConfigFile, 'utf-8'));
       expect(writtenConfig.version).toBe(2);
       expect(writtenConfig.activeProfile).toBe(testCase.profileName);
-      expect(writtenConfig.profiles[testCase.profileName].provider).toBe(testCase.profileName);
+
+      // Verify provider (use expectedProvider if specified, otherwise use profileName)
+      const expectedProvider = testCase.expectedProvider || testCase.profileName;
+      expect(writtenConfig.profiles[testCase.profileName].provider).toBe(expectedProvider);
 
       // Verify baseUrl (construct expected URL for Bedrock)
       const expectedBaseUrl = testCase.envVars.baseUrl ||
-        (testCase.profileName === 'bedrock' ? `https://bedrock-runtime.${testCase.envVars.region}.amazonaws.com` : undefined);
+        (expectedProvider === 'bedrock' ? `https://bedrock-runtime.${testCase.envVars.region}.amazonaws.com` : undefined);
       expect(writtenConfig.profiles[testCase.profileName].baseUrl).toBe(expectedBaseUrl);
 
       // Step 2: Run 'codemie doctor'
@@ -157,7 +225,7 @@ describe('Setup profile - run codemie doctor - run codemie profile', () => {
       // Verify Active Profile section with exact format
       expect(doctorResult.output).toMatch(/Active Profile:/i);
       expect(doctorResult.output).toContain(`○ Active Profile: ${testCase.profileName}`);
-      expect(doctorResult.output).toContain(`✓ Provider: ${testCase.profileName}`);
+      expect(doctorResult.output).toContain(`✓ Provider: ${expectedProvider}`);
       expect(doctorResult.output).toContain(`✓ Base URL: ${expectedBaseUrl}`);
 
       // Verify model if provided
@@ -166,7 +234,7 @@ describe('Setup profile - run codemie doctor - run codemie profile', () => {
       }
 
       // Provider-specific health checks
-      if (testCase.profileName === 'bedrock') {
+      if (expectedProvider === 'bedrock') {
         // Verify AWS Bedrock Provider section
         expect(doctorResult.output).toMatch(/AWS Bedrock Provider:/i);
         expect(doctorResult.output).toMatch(/✓.*AWS Bedrock is accessible with \d+ model\(s\) available/i);
@@ -176,7 +244,7 @@ describe('Setup profile - run codemie doctor - run codemie profile', () => {
         if (testCase.envVars.model) {
           expect(doctorResult.output).toMatch(new RegExp(`✓.*Model '.*${testCase.envVars.model}.*' available`, 'i'));
         }
-      } else if (testCase.profileName === 'litellm') {
+      } else if (expectedProvider === 'litellm') {
         // LiteLLM-specific checks (if any)
         // Can add LiteLLM provider section checks here
       }
@@ -203,7 +271,7 @@ describe('Setup profile - run codemie doctor - run codemie profile', () => {
       // Verify profile list format
       expect(profileResult.output).toContain('All Profiles:');
       expect(profileResult.output).toMatch(new RegExp(`Profile\\s+│\\s+${testCase.profileName}\\s+\\(Active\\)`));
-      expect(profileResult.output).toMatch(new RegExp(`Provider\\s+│\\s+${testCase.profileName}`));
+      expect(profileResult.output).toMatch(new RegExp(`Provider\\s+│\\s+${expectedProvider}`));
 
       // Verify model if provided
       if (testCase.envVars.model) {
