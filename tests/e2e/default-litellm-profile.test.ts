@@ -1,15 +1,14 @@
 /**
- * Default LiteLLM Profile - E2E Integration Test
+ * Multi-Agent Multi-Profile E2E Integration Test
  *
  * Tests the complete user flow with multiple profiles where LiteLLM is the default.
  * Tests codemie-code (built-in), codemie-claude, and codemie-gemini (external) agents.
  *
  * Test scenarios:
  * 1. Setup 4 profiles (litellm as default, gemini-profile, bedrock-creds, bedrock-profile)
- * 2. Run without profile flag (should use default litellm) - all 3 agents
- * 3. Run with model override - all 3 agents
- * 4. Run with profile override - all 3 agents
- * 5. Run with both profile and model override - all 3 agents
+ * 2. codemie-code: default profile, model override, profile override, both overrides
+ * 3. codemie-claude: default profile, model override, multiple profile overrides (litellm, bedrock-creds, bedrock-profile), both overrides
+ * 4. codemie-gemini: default profile with gemini model, model override, profile override, both overrides
  *
  * REQUIRED ENVIRONMENT VARIABLES:
  *
@@ -36,7 +35,7 @@ import { existsSync } from 'fs';
 import { execSync } from 'child_process';
 import type { MultiProviderConfig, CodeMieConfigOptions } from '../../src/env/types';
 
-describe('Default LiteLLM Profile - Multi-Profile E2E', () => {
+describe('Multi-Agent Multi-Profile E2E', () => {
   let testConfigDir: string;
   let testConfigFile: string;
   let awsDir: string;
@@ -49,8 +48,8 @@ describe('Default LiteLLM Profile - Multi-Profile E2E', () => {
 
   const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
   const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  const awsRegion = process.env.AWS_DEFAULT_REGION || 'us-east-1';
-  const awsProfile = process.env.AWS_PROFILE || 'test-codemie-profile';
+  const awsRegion = process.env.AWS_DEFAULT_REGION;
+  const awsProfile = process.env.AWS_PROFILE;
   const bedrockModel = process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
   beforeAll(async () => {
@@ -86,7 +85,7 @@ describe('Default LiteLLM Profile - Multi-Profile E2E', () => {
       }
     }
 
-    // Create 3 profiles with litellm as default
+    // Create 4 profiles with litellm as default
     const profiles: Record<string, CodeMieConfigOptions> = {
       litellm: {
         provider: 'litellm',
@@ -106,7 +105,7 @@ describe('Default LiteLLM Profile - Multi-Profile E2E', () => {
         provider: 'bedrock',
         baseUrl: `https://bedrock-runtime.${awsRegion}.amazonaws.com`,
         apiKey: awsAccessKeyId,
-        awsSecretAccessKey: awsSecretAccessKey || 'dummy-secret',
+        awsSecretAccessKey: awsSecretAccessKey,
         awsRegion: awsRegion,
         model: bedrockModel,
         timeout: 300
@@ -147,7 +146,7 @@ describe('Default LiteLLM Profile - Multi-Profile E2E', () => {
 
   // Parametrized test cases
   const testCases = [
-    // codemie-code tests
+    // ==================== codemie-code tests ====================
     {
       agent: 'codemie-code',
       command: 'node ./bin/agent-executor.js',
@@ -180,7 +179,7 @@ describe('Default LiteLLM Profile - Multi-Profile E2E', () => {
       model: 'claude-haiku-4-5-20251001',
       needsEnvVar: true
     },
-    // codemie-claude tests
+    // ==================== codemie-claude tests ====================
     {
       agent: 'codemie-claude',
       command: 'node ./bin/codemie-claude.js',
@@ -208,20 +207,44 @@ describe('Default LiteLLM Profile - Multi-Profile E2E', () => {
     {
       agent: 'codemie-claude',
       command: 'node ./bin/codemie-claude.js',
-      description: 'should override both profile and model',
+      description: 'should override profile to gemini-profile with model override',
       profile: 'gemini-profile',
       model: 'claude-haiku-4-5-20251001',
       needsEnvVar: false
     },
-    // codemie-gemini tests
     {
-      agent: 'codemie-gemini',
-      command: 'node ./bin/codemie-gemini.js',
-      description: 'should use default litellm profile with gemini model',
-      profile: undefined,
-      model: 'gemini-2.5-pro',
+      agent: 'codemie-claude',
+      command: 'node ./bin/codemie-claude.js',
+      description: 'should override profile to bedrock-creds',
+      profile: 'bedrock-creds',
+      model: undefined,
       needsEnvVar: false
     },
+    {
+      agent: 'codemie-claude',
+      command: 'node ./bin/codemie-claude.js',
+      description: 'should override profile to bedrock-creds with model override',
+      profile: 'bedrock-creds',
+      model: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      needsEnvVar: false
+    },
+    {
+      agent: 'codemie-claude',
+      command: 'node ./bin/codemie-claude.js',
+      description: 'should override profile to bedrock-profile',
+      profile: 'bedrock-profile',
+      model: undefined,
+      needsEnvVar: false
+    },
+    {
+      agent: 'codemie-claude',
+      command: 'node ./bin/codemie-claude.js',
+      description: 'should override profile to bedrock-profile with model override',
+      profile: 'bedrock-profile',
+      model: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+      needsEnvVar: false
+    },
+    // ==================== codemie-gemini tests ====================
     {
       agent: 'codemie-gemini',
       command: 'node ./bin/codemie-gemini.js',
