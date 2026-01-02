@@ -135,7 +135,7 @@ describe('Multi-Agent Multi-Profile E2E', () => {
       agent: 'codemie-code',
       description: 'should override model while using default profile',
       profile: undefined,
-      model: 'gpt-4.1'
+      model: 'gpt-5-nano-2025-08-07'
     },
 
     // ==================== codemie-claude (External agent + profile switching) ====================
@@ -157,7 +157,7 @@ describe('Multi-Agent Multi-Profile E2E', () => {
       agent: 'codemie-gemini',
       description: 'should override model while using default profile',
       profile: undefined,
-      model: 'gemini-3-pro'
+      model: 'gemini-2.5-flash'
     },
   ];
 
