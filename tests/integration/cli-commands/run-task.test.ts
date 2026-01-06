@@ -6,8 +6,9 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import { writeFile, readFile } from 'fs/promises';
+import { writeFile, readFile, mkdir } from 'fs/promises';
 import { join } from 'path';
+import { homedir } from 'os';
 import { execSync } from 'child_process';
 import { setupTestIsolation, getTestHome } from '../../helpers/test-isolation.js';
 import type { MultiProviderConfig, CodeMieConfigOptions } from '../../../src/env/types.js';
@@ -26,7 +27,7 @@ describe('Multi-Agent Multi-Profile E2E', () => {
   const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
   const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
   const awsRegion = process.env.AWS_DEFAULT_REGION;
-  const awsProfile = process.env.AWS_PROFILE;
+  const awsProfile = process.env.AWS_PROFILE || 'test-codemie-profile';
   const bedrockModel = process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
   beforeAll(async () => {
@@ -34,8 +35,29 @@ describe('Multi-Agent Multi-Profile E2E', () => {
     const testHome = getTestHome();
     testConfigFile = join(testHome, 'codemie-cli.config.json');
 
-    // Note: AWS credentials file setup is handled by the test environment
-    // The ~/.aws/credentials file is expected to exist with the profile specified in AWS_PROFILE
+    // Setup AWS credentials file for bedrock-profile test
+    const awsDir = join(homedir(), '.aws');
+    const credentialsFile = join(awsDir, 'credentials');
+
+    if (awsAccessKeyId && awsSecretAccessKey && awsProfile) {
+      await mkdir(awsDir, { recursive: true });
+
+      let credentialsContent = '';
+      try {
+        credentialsContent = await readFile(credentialsFile, 'utf-8');
+      } catch {
+        // File doesn't exist, will create it
+      }
+
+      // Check if profile already exists
+      const profileRegex = new RegExp(`\\[${awsProfile}\\]`, 'i');
+      if (!profileRegex.test(credentialsContent)) {
+        // Profile missing, create it
+        const profileSection = `\n[${awsProfile}]\naws_access_key_id = ${awsAccessKeyId}\naws_secret_access_key = ${awsSecretAccessKey}\n`;
+        credentialsContent += profileSection;
+        await writeFile(credentialsFile, credentialsContent);
+      }
+    }
 
     const profiles: Record<string, CodeMieConfigOptions> = {
       litellm: {
