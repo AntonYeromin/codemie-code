@@ -151,6 +151,13 @@ describe('Multi-Agent Multi-Profile E2E', () => {
   it.concurrent.each(chatTestCases)(
     '$agent: $description',
     async ({ agent, profile, model }) => {
+      // Skip external agent tests if TEST_AGENT_FILTER is set
+      const agentFilter = process.env.TEST_AGENT_FILTER;
+      if (agentFilter && agent !== agentFilter) {
+        console.log(`Skipping ${agent} test (filter: ${agentFilter})`);
+        return;
+      }
+
       // Build command parts
       const parts: string[] = [];
 

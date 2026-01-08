@@ -170,21 +170,13 @@ jobs:
           name: dist
           path: dist/
 
-      # Install required agents for integration tests
-      - name: Install Claude Code agent
-        run: codemie install claude
-        continue-on-error: false
-
-      - name: Install Gemini CLI agent
-        run: codemie install gemini
-        continue-on-error: false
-
       - name: Run unit tests
         run: npm run test:unit
 
       - name: Run integration tests
         run: npm run test:integration
         env:
+          TEST_AGENT_FILTER: codemie-code
           LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
