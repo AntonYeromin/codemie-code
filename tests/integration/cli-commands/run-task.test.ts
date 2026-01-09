@@ -13,22 +13,35 @@ import { execSync } from 'child_process';
 import { setupTestIsolation, getTestHome } from '../../helpers/test-isolation.js';
 import type { MultiProviderConfig, CodeMieConfigOptions } from '../../../src/env/types.js';
 
-describe('Multi-Agent Multi-Profile E2E', () => {
+// Test environment variables
+const liteLLMBaseUrl = process.env.LITELLM_BASE_URL;
+const liteLLMApiKey = process.env.LITELLM_API_KEY;
+const liteLLMModel = process.env.LITELLM_MODEL || 'gpt-4.1';
+
+const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+const awsRegion = process.env.AWS_DEFAULT_REGION;
+const awsProfile = process.env.AWS_PROFILE || 'test-codemie-profile';
+const bedrockModel = process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-5-20250929-v1:0';
+
+// Check if required environment variables are set
+const hasLiteLLMConfig = !!(liteLLMBaseUrl && liteLLMApiKey);
+const hasAWSConfig = !!(awsAccessKeyId && awsSecretAccessKey && awsRegion);
+const hasAnyConfig = hasLiteLLMConfig || hasAWSConfig;
+
+// Log skip reason for CI visibility
+if (!hasAnyConfig) {
+  console.log('\n⚠️  Skipping Multi-Agent Multi-Profile E2E tests');
+  console.log('   Reason: No provider credentials configured');
+  console.log('   Required: LITELLM_BASE_URL + LITELLM_API_KEY, or AWS credentials\n');
+}
+
+// Conditional describe - skip if no configuration available
+describe.skipIf(!hasAnyConfig)('Multi-Agent Multi-Profile E2E', () => {
   // Setup isolated CODEMIE_HOME for this test suite
   setupTestIsolation();
 
   let testConfigFile: string;
-
-  // Test environment variables
-  const liteLLMBaseUrl = process.env.LITELLM_BASE_URL;
-  const liteLLMApiKey = process.env.LITELLM_API_KEY;
-  const liteLLMModel = process.env.LITELLM_MODEL || 'gpt-4.1';
-
-  const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  const awsRegion = process.env.AWS_DEFAULT_REGION;
-  const awsProfile = process.env.AWS_PROFILE || 'test-codemie-profile';
-  const bedrockModel = process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
   beforeAll(async () => {
     // Get isolated test home and setup config

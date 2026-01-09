@@ -40,20 +40,32 @@ describe('Profile Commands', () => {
   });
 });
 
-describe('Profile Status Command', () => {
+// Test environment variables
+const liteLLMBaseUrl = process.env.LITELLM_BASE_URL;
+const liteLLMApiKey = process.env.LITELLM_API_KEY;
+const liteLLMModel = process.env.LITELLM_MODEL || 'gpt-4.1';
+
+const awsRegion = process.env.AWS_DEFAULT_REGION;
+const awsProfile = process.env.AWS_PROFILE || 'test-codemie-profile';
+const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+const bedrockModel = process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-5-20250929-v1:0';
+
+// Check if required environment variables are set
+const hasLiteLLMConfig = !!(liteLLMBaseUrl && liteLLMApiKey);
+const hasAWSConfig = !!(awsAccessKeyId && awsSecretAccessKey && awsRegion);
+const hasAnyConfig = hasLiteLLMConfig || hasAWSConfig;
+
+// Log skip reason for CI visibility
+if (!hasAnyConfig) {
+  console.log('\n⚠️  Skipping Profile Status Command tests');
+  console.log('   Reason: No provider credentials configured');
+  console.log('   Required: LITELLM_BASE_URL + LITELLM_API_KEY, or AWS credentials\n');
+}
+
+describe.skipIf(!hasAnyConfig)('Profile Status Command', () => {
   // Setup isolated CODEMIE_HOME for this test suite
   setupTestIsolation();
-
-  // Test environment variables
-  const liteLLMBaseUrl = process.env.LITELLM_BASE_URL;
-  const liteLLMApiKey = process.env.LITELLM_API_KEY;
-  const liteLLMModel = process.env.LITELLM_MODEL || 'gpt-4.1';
-
-  const awsRegion = process.env.AWS_DEFAULT_REGION;
-  const awsProfile = process.env.AWS_PROFILE || 'test-codemie-profile';
-  const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-  const bedrockModel = process.env.BEDROCK_MODEL || 'global.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
   beforeAll(async () => {
     // Create multi-profile config in isolated CODEMIE_HOME
