@@ -6,6 +6,8 @@
 
 import { HTTPClient } from '../../core/base/http-client.js';
 import type { CodeMieModel, CodeMieIntegration, CodeMieIntegrationsResponse } from '../../core/types.js';
+import { logger } from '../../../utils/logger.js';
+import { sanitizeLogArgs } from '../../../utils/security.js';
 
 /**
  * User info response from /v1/user endpoint
@@ -28,6 +30,7 @@ export interface CodeMieUserInfo {
 export const CODEMIE_ENDPOINTS = {
   MODELS: '/v1/llm_models?include_all=true',
   USER_SETTINGS: '/v1/settings/user',
+  USER_SETTINGS_AVAILABLE: '/v1/settings/user/available',
   USER: '/v1/user',
   ADMIN_APPLICATIONS: '/v1/admin/applications',
   METRICS: '/v1/metrics',
@@ -254,6 +257,33 @@ export async function fetchCodeMieIntegrations(
   // If we got no integrations and had an error, throw it
   if (allIntegrations.length === 0 && lastError) {
     throw lastError;
+  }
+
+  // Additionally fetch project-level integrations from the available endpoint.
+  // GET /v1/settings/user only returns setting_type=USER; project-level integrations
+  // (setting_type=PROJECT) require GET /v1/settings/user/available.
+  try {
+    const filters = JSON.stringify({ type: ['LiteLLM'] });
+    const availableQueryParams = new URLSearchParams({ filters });
+    const availableUrl = `${apiUrl}${CODEMIE_ENDPOINTS.USER_SETTINGS_AVAILABLE}?${availableQueryParams.toString()}`;
+    const availableIntegrations = await fetchIntegrationsPage(availableUrl, cookieString);
+
+    const existingIds = new Set(allIntegrations.map(i => i.id));
+    for (const integration of availableIntegrations) {
+      if (
+        !existingIds.has(integration.id) &&
+        integration.credential_type === 'LiteLLM'
+      ) {
+        allIntegrations.push(integration);
+        existingIds.add(integration.id);
+      }
+    }
+  } catch (error) {
+    // Non-fatal: project-level integrations are optional
+    logger.debug(
+      'Could not fetch project-level integrations',
+      ...sanitizeLogArgs({ error: error instanceof Error ? error.message : String(error) })
+    );
   }
 
   return allIntegrations;
